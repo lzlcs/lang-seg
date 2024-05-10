@@ -155,7 +155,7 @@ class LSeg(BaseModel):
 
         self.scratch.output_conv = head
 
-        self.text = clip.tokenize(self.labels)    
+        # self.text = clip.tokenize(self.labels)    
         
     def forward(self, x, labelset=''):
         if labelset == '':
@@ -214,7 +214,7 @@ class LSegNet(LSeg):
 
         self.crop_size = crop_size
         self.scale_factor = scale_factor
-        self.labels = labels
+        # self.labels = labels
 
         head = nn.Sequential(
             Interpolate(scale_factor=2, mode="bilinear", align_corners=True),
