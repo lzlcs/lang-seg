@@ -38,8 +38,6 @@ class LSeg_MultiEvalModule(DataParallel):
         Args:
             inputs: list of Tensors
         """
-        if len(label_set) < 10:
-            print('** MultiEvalModule parallel_forward phase: {} **'.format(label_set))
         self.nclass = len(label_set)
         inputs = [(input.unsqueeze(0).cuda(device),)
                   for input, device in zip(inputs, self.device_ids)]
@@ -55,8 +53,6 @@ class LSeg_MultiEvalModule(DataParallel):
     def forward(self, image, label_set=''):
         """Mult-size Evaluation"""
         # only single image is supported for evaluation
-        if len(label_set) < 10:
-            print('** MultiEvalModule forward phase: {} **'.format(label_set))
         batch, _, h, w = image.size()
         assert(batch == 1)
         self.nclass = len(label_set)

@@ -321,82 +321,79 @@ def get_new_mask_pallete(npimg, new_palette, out_label_flag=False, labels=None):
             red_patch = mpatches.Patch(color=cur_color, label=label)
             patches.append(red_patch)
     return out_img, patches
-
-def get_labels(prompt):
-    """split promptm, return a list"""
-    labels = []
-    print("Input prompt: {}".format(prompt))
-    lines = prompt.split(",")
-    for line in lines:
-        label = line
-        labels.append(label)
         
-    return labels
-
-def get_mask(lseg_model, image, labels):
-    """return masks [1, H, W]"""
+class LSegInterface:
     
-    with torch.no_grad():
-        outputs = lseg_model.parallel_forward(image, labels)
-        # outputs = model(image,labels)
-        predicts = [torch.max(output, 1)[1].cpu().numpy() for output in outputs]
+    def __init__(self, colored_mask=False) -> None:
+        """load Lseg model"""
+        self.lseg_model, self.lseg_transform = load_model()
+        self.colored_mask = colored_mask
         
-    return predicts[0]
-
-def lang_seg_style(style_path, prompt):
-    """get datasets masks under ./lang_masks/styles/"""
-    print("Loading lang-seg model...")
-    lseg_model, lseg_transform = load_model()
-
-    labels = get_labels(prompt)
-
-    output_path = os.path.join("./lang_masks/styles/")
-    os.makedirs(output_path, exist_ok=True)
-
-    image = Image.open(style_path)
-    image = np.array(image)
-    image = lseg_transform(image).unsqueeze(0)
-
-    predict = get_mask(lseg_model, image, labels)
-
-    new_palette = get_new_pallete(len(labels))
-    mask, _ = get_new_mask_pallete(
-        predict, new_palette, out_label_flag=True, labels=labels
-    )
-
-    mask = mask.convert("RGB")
-    mask.save(os.path.join(output_path, os.path.basename(style_path)))
-
-
-def lang_seg_all(dataset_path, prompt):
-    """get datasets masks under ./lang_masks/{dataset name}/"""
-    print("Loading lang-seg model...")
-    lseg_model, lseg_transform = load_model()
-
-    labels = get_labels(prompt)
-
-    file_list = os.listdir(os.path.join(dataset_path, "images"))
-    output_path = os.path.join("./lang_masks/", os.path.basename(os.path.normpath(dataset_path)))
-    os.makedirs(output_path, exist_ok=True)
-
-    for i in tqdm(range(len(file_list))):
-        file = file_list[i]
-
-        image = Image.open(os.path.join(dataset_path, "images", file))
-        image = np.array(image)
-        image = lseg_transform(image).unsqueeze(0)
-
-        predict = get_mask(lseg_model, image, labels)
-
-        new_palette = get_new_pallete(len(labels))
-        mask, _ = get_new_mask_pallete(
-            predict, new_palette, out_label_flag=True, labels=labels
-        )
-
-        mask = mask.convert("RGB")
-        mask.save(os.path.join(output_path, file))
-
+    def get_mask(self, image: torch.Tensor, prompt: str) -> Image.Image:
+        """Get image mask through prompt
+    
+        Args:
+            image: A tensor with a shape of [1, H, W, C]
+            prompt: A string containing keywords separated by commas
+            
+        Returns:
+            mask: A Image whose mode is 'L' or 'RGB'
+        """
+        
+        labels = []
+        print("Input prompt: {}".format(prompt))
+        lines = prompt.split(",")
+        for line in lines:
+            label = line
+            labels.append(label)
+        
+        with torch.no_grad():
+            outputs = self.lseg_model.parallel_forward(image, labels)
+            # outputs = model(image,labels)
+            predicts = [torch.max(output, 1)[1].cpu().numpy() for output in outputs]
+            
+        
+        if self.colored_mask:
+            new_palette = get_new_pallete(len(labels))
+            mask, _ = get_new_mask_pallete(
+                predicts[0], new_palette, out_label_flag=True, labels=labels
+            )
+            mask = mask.convert("RGB")
+        else:
+            mask = predicts[0].astype(np.uint8)
+            print(mask.shape)
+            mask = Image.fromarray(mask[0])
+            
+        return mask
+        
+    def lseg(self, image_path: str, prompt: str, output_path: str) -> None:
+        
+        os.makedirs(output_path, exist_ok=True)
+        if os.path.isdir(image_path):
+            file_list = os.listdir(image_path)
+            for i in tqdm(range(file_list)):
+                file = file_list[i]
+                image = Image.open(os.path.join(image_path, file))
+                image = self.lseg_transform(image).unsqueeze(0)
+                mask = self.get_mask(image, prompt)
+                mask.save(os.path.join(output_path, file))
+        else:
+            image = Image.open(image_path)
+            image = self.lseg_transform(image).unsqueeze(0)
+            mask = self.get_mask(image, prompt)
+            mask.save(os.path.join(output_path, os.path.basename(image_path)))
+        
 
 if __name__ == '__main__':
-    lang_seg_all("../ART-Gaussian/data/room/", "chair,wall,television,other")
-    lang_seg_style("../ART-Gaussian/styles/30.jpg", "boat,lake,hill,other")
+    
+    parser = argparse.ArgumentParser(description='Lseg images')
+    
+    parser.add_argument('--input_path', type=str, help='input image or folder')
+    parser.add_argument('--prompt', type=str, help='str containing keywords separated by commas')
+    parser.add_argument('--output_path', type=str, help='output image or folder')
+    parser.add_argument("--colorful", action="store_true")
+    args = parser.parse_args()
+    
+    model = LSegInterface(args.colorful)
+    model.lseg(args.input_path, args.prompt, args.output_path)
+    
